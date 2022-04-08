@@ -1,0 +1,205 @@
+---
+title: "Names"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Libraries
+```{r}
+library(readxl)
+library(dplyr)
+library(stringr)
+library(writexl)
+library(rlang)
+```
+
+
+# Loading in the Data
+```{r}
+#raw_data <- read_excel("Preferred Name QA_QC 20211007-090939.xlsx")
+raw_data <- read_excel("Quick Query 20220322-142208.xlsx")
+clean_data <- raw_data
+```
+
+
+# Creation of the function that will find common errors in a dataset
+```{r}
+Uncleaned <- function(Raw_data,Column_Name) {                                   # Creation of function 
+df1 <- Raw_data%>%                                                              # I created this first dataset to filter for the peple who have an unknown character 
+    filter(str_detect(Column_Name,"1|2|3|4|5|6|7|8|9|0|\\(|\\)")) %>%           
+    mutate(Reason_4_Review = "Unknown Character")
+df2 <- Raw_data%>%                                                              # I created this second dataset to find the people who have an "or" or a ","
+    filter(str_detect(Column_Name," or |,")) %>%
+    mutate(Reason_4_Review = "Or/,")
+Return <- union(df1,df2)                                                        # I combined the data
+  return(Return)
+}
+
+Length_Check <- function(Raw_data,Column_Name){
+df1 <- Raw_data%>%                                                               
+    filter(str_length(Column_Name) > 12) %>%           
+    mutate(Reason_4_Review = "Greater than 12 characters")
+}
+```
+
+
+
+# Finding the data that needs to be clean
+```{r}
+Needs_Review_p <- Uncleaned(raw_data,raw_data$Preferred) %>%                    # Execution of the data through the function
+  mutate(Error_Location = "Preferred")
+Needs_Review_f <- Uncleaned(raw_data,raw_data$First)  %>%                        
+  mutate(Error_Location = "First")
+Needs_Review_m <- Uncleaned(raw_data,raw_data$Middle)%>%                       
+  mutate(Error_Location = "Middle")
+Needs_Review_l <- Uncleaned(raw_data,raw_data$Last)%>%                        
+  mutate(Error_Location = "Last")
+Needs_Review_length_p <- Length_Check(raw_data,raw_data$Preferred) %>%
+  mutate(Error_Location = "Preferred")
+
+#Needs_review_pfl <- clean_data%>%          #This was to find when when the preferred name consisted of the first name plus last name. 
+  #filter(str_detect(Preferred, First)) #%>%
+  #filter(str_detect(Preferred, Last)) %>%
+  #mutate(Reason_4_Review = "Preferred = First+Last Name")
+
+Needs_review <- bind_rows(Needs_Review_length_p,Needs_Review_f,Needs_Review_l,Needs_Review_m,Needs_Review_p)   # Combining the data so all the uncleaned data is in one place. 
+```
+
+#Exporting data
+```{r}
+#write_xlsx(Needs_review,"C:\\Users\\foilbn\\Documents\\R workspace\\Needs_review.xlsx")              #This exports the data as a excel file. 
+```
+
+# Preferred Name if unexpected number
+```{r}
+Fixed_Pre <- Needs_Review_p %>%
+  filter(str_detect(Preferred,"1|2|3|4|5|6|7|8|9|0")) %>%
+  mutate(Preferred = First)
+
+clean_data <- full_join(clean_data,Fixed_Pre)%>%
+  filter(str_detect(Preferred,"1|2|3|4|5|6|7|8|9|0") == FALSE)
+```
+
+# Preferred Name if format: First(Preferred)
+```{r}
+
+```
+
+# Preferred Name if 
+```{r}
+#Fixed_pfl <- clean_data%>%    
+ # filter(str_detect(Preferred," or ")) %>%
+  #filter(str_detect(Preferred, First)) %>%
+  #filter(str_detect(Preferred, Last)) %>%
+  #mutate(Preferred = First)
+
+#Tst <- full_join(clean_data,Fixed_pfl)#%>%
+ # filter(!str_detect(Preferred, First) == FALSE  & !str_detect(Preferred, Last) == FALSE)
+  
+
+#clean_data[str_detect(clean_data$Preferred,clean_data$Last)] #<- Fixed_pfl$Preferred 
+```
+
+
+
+
+
+
+# Middle Name
+
+```{r}
+raw_data %>%
+  filter(str_length(raw_data$Preferred)>12)
+```
+
+
+
+# Creation of the cleaning function 
+```{r}
+Cleaned <- function(Raw_data, Needs_review, Column_Name) {
+  
+Raw_data %>%
+ filter(str_detect(Column_Name,"1|2|3|4|5|6|7|8|9|0")) %>%           
+    mutate(Column_Name, )
+    
+Raw_data %>% 
+    filter()
+  
+  
+  
+  
+  
+}
+  
+  
+  
+  
+```
+
+
+
+
+
+
+
+
+# Cleaning the data
+```{r}
+Cleaning <- function(Unclean_Dataset,Column_Name){
+  Unclean_Dataset %>%
+    filter(str_detect(Column_Name,"1|2|3|4|5|6|7|8|9|0")) %>%
+  mutate(Column_Name = NA)
+}
+
+```
+
+# Cleaning the data
+```{r}
+#Fixed_Pre <- uncleaned_Pre %>%
+#  filter(str_detect(Preferred,"1|2|3|4|5|6|7|8|9|0")) %>%
+#  mutate(Preferred = NA)
+
+#clean_data <- full_join(clean_data,Fixed_Pre)%>%
+#  filter(str_detect(Preferred,"1|2|3|4|5|6|7|8|9|0") == FALSE | is.na(Preferred) == TRUE)
+
+
+
+
+#Fixed_Mid <- uncleaned_Mid %>%
+#  filter(str_detect(Middle,"1|2|3|4|5|6|7|8|9|0")) %>%
+#  mutate(Middle = NA)
+
+#clean_data <- full_join(clean_data,Fixed_Mid)%>%
+#  filter(str_detect(Middle,"1|2|3|4|5|6|7|8|9|0") == FALSE | is.na(Middle) == TRUE)
+```
+
+
+
+#Luiza Acioly - look her frist name and last name
+# I need to fix the () and "" issue for reusability
+# Ned to clean the data for a theoretical missinput for last name and first name 
+# For 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

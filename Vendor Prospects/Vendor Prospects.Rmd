@@ -1,0 +1,186 @@
+---
+title: "Vendor Prospects Testing"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Libraries 
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(writexl)
+```
+
+
+# Load the data
+```{r}
+NACAC <- read_excel("NACAC College Fair Lists Prospect Records.xlsx")
+College_Board <- read_excel("College Board Search Name Buy Prospect Records.xlsx")
+PCU <- read_excel("PCU Prospect Records.xlsx")
+Niche <- read_excel("Niche Lead Delivery Prospect Records.xlsx")
+Active_Match <- read_excel("Active Match + Prospect Records.xlsx")
+
+Vendor_Prospects <- bind_rows(NACAC,College_Board,PCU,Niche,Active_Match)
+```
+
+
+# Create Function to Split the Recd into date and time and sort the data. Then get rid of duplicates
+```{r}
+TimeSplit <- function(DataFrame) {
+  Result <- DataFrame %>%
+    mutate(TimeRecd = substr(DateRecd,12,nchar(DateRecd))) %>%
+    mutate(DateRecd = as.Date(substr(DateRecd,1,10), "%m/%d/%Y")) %>%
+    arrange(Ref,DateRecd)
+  Result <- Result[!duplicated(Result$Ref), ]
+
+  return(Result)
+}
+```
+
+
+# Fixed the data
+```{r}
+NACAC_Clean <- TimeSplit(NACAC)
+College_Board_Clean <- TimeSplit(College_Board)
+PCU_Clean <- TimeSplit(PCU)
+Niche_Clean <- TimeSplit(Niche)
+Active_Match_Clean <- TimeSplit(Active_Match)  
+
+Vendor_Prospects_Clean <- bind_rows(NACAC_Clean, College_Board_Clean, PCU_Clean, Niche_Clean, Active_Match_Clean) %>%
+  arrange(Ref,DateRecd)
+
+```
+
+# Exporting data
+```{r}
+#write_xlsx(Vendor_Prospects_Clean,"C:\\Users\\foilbn\\Documents\\Vendor_Prospects.xlsx")
+```
+
+
+# Plan of action: Create five columns for five sources. Source 1 is the first vendor who reached out to the prospect
+```{r}
+V <- Vendor_Prospects_Clean %>%
+  select(Ref,SourceFormat,DateRecd,TimeRecd)
+
+reshape(V, timevar = "SourceFormat",idvar = "Ref", direction = "wide")
+
+
+
+
+```
+
+
+```{r}
+# Initial conditions
+
+A = 0
+I = 50
+# Create the source columns
+Vendor_Prospects_Clean <- Vendor_Prospects_Clean %>%
+  mutate(Source_1 = NA, Source_1_Date = NA, Source_2 = NA, Source_2_Date = NA, Source_3 = NA, Source_3_Date = NA,Source_4 = NA, Source_4_Date = NA,Source_5 = NA, Source_5_Date = NA)
+Vendor_final <- Vendor_Prospects_Clean
+Vendor_final$SourceFormat <- NULL
+Vendor_final$DateRecd <- NULL
+
+
+for (i in 1:nrow(Vendor_Prospects_Clean)) {
+  ID = Vendor_Prospects_Clean[i,1]
+  if (Vendor_Prospects_Clean[I,1] == ID) {
+    A = A + 1
+    if (A == 2) {
+        Vendor_final[I,18] = Vendor_Prospects_Clean[i,3]
+        Vendor_final[I,19] = Vendor_Prospects_Clean[i,4]
+    }else {
+      if (A ==3) {
+        Vendor_final[I,20] = Vendor_Prospects_Clean[i,3]
+        Vendor_final[I,21] = Vendor_Prospects_Clean[i,4]
+      }else {
+        if (A==4) {
+          Vendor_final[I,22] = Vendor_Prospects_Clean[i,3]
+          Vendor_final[I,23] = Vendor_Prospects_Clean[i,4]
+        }else {
+          Vendor_final[I,24] = Vendor_Prospects_Clean[i,3]
+          Vendor_final[I,25] = Vendor_Prospects_Clean[i,4]
+        }
+      }
+    }
+  } else {
+    ID = Vendor_Prospects_Clean[i,1]
+    A = 1
+    I = i   # In order to remember the first instance of the Row ID
+    Vendor_final[I,16] = Vendor_Prospects_Clean[I,3]
+    Vendor_final[I,17] = Vendor_Prospects_Clean[I,4]
+  }
+  
+#  if (i%%5000 == 0) {
+#    print(i)
+#  }
+  
+  
+  }
+
+
+```
+
+# Fix the data so we only have the final rows
+```{r}
+Vendor_final <- Vendor_final %>%
+  drop_na(Source_1)
+```
+
+
+# Exporting data
+```{r}
+#write_xlsx(Vendor_final,"C:\\Users\\foilbn\\Documents\\Vendor_final.xlsx")
+```
+
+
+
+# How many people have reoccuring Refs?
+```{r}
+T <- Vendor_Prospects_Clean %>%
+ # filter(SourceFormat == "Niche Lead Delivery") %>%
+  group_by(Ref) %>%
+  summarise(num_vendors = n())
+ # arrange(desc(num_vendors)) %>%
+#  group_by(num_vendors) %>%
+ # summarise(Num_occ = n())
+nrow(T)
+```
+
+# Individual search
+```{r}
+Ind <- Vendor_Prospects_Clean %>%
+  filter(Ref == 037500275) 
+  
+Ind
+```
+
+```{r}
+Vendor_Prospects_Clean %>%
+  group_by(Ref) %>%
+  summarise(frequancy = n()) %>%
+  arrange(desc(frequancy))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

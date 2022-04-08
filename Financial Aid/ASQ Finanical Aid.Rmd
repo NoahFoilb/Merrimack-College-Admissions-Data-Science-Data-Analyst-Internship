@@ -1,0 +1,164 @@
+---
+title: "Financial Aid"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Load Libraries 
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(writexl)
+library(ggplot2)
+```
+
+# Load Dataset
+```{r}
+ASQ <- read_excel("ASQ - Completors - Fall 2021 20211021-092813.xlsx")
+```
+
+# How many Zip codes exist?
+```{r}
+ASQ %>%
+  group_by(`Active Zip`) %>%
+  summarise(frequency = n()) %>%
+  group_by(frequency) %>%
+  summarise(freq = n()) %>%
+  arrange(desc(frequency)) %>% 
+  filter(frequency > 3)
+```
+
+
+# Lets look at some correlations
+```{r}
+# Qual. Gender, most recent decisions
+# Fafsa recieved date???
+Numerical_Data <- ASQ[,c("Recalculated GPA","Merit Scholarship Amount","Academic Rating","Total I Grant","Distance")] %>%
+  drop_na()
+
+Numerical_Data$`Merit Scholarship Amount` <- gsub("[\\$,]", "",Numerical_Data$`Merit Scholarship Amount`)
+Numerical_Data$Distance <- gsub("[,]" , "", Numerical_Data$Distance)
+Numerical_Data[] <- lapply(Numerical_Data, function(x) as.numeric(as.character(x)))
+ASQ$`Total I Grant` <- as.numeric(ASQ$`Total I Grant`)
+ASQ$`Merit Scholarship Amount` <- gsub("[\\$,]", "",ASQ$`Merit Scholarship Amount`)
+ASQ$`Merit Scholarship Amount` <- as.numeric(ASQ$`Merit Scholarship Amount`)
+
+
+summary(Numerical_Data)
+```
+
+# Correlations?
+```{r}
+cor(Numerical_Data)
+```
+
+# Check out a boxplot
+```{r}
+ggplot(ASQ, aes(ASQ$Enrolled, ASQ$`Total I Grant`)) + geom_boxplot() + coord_flip()
+ggplot(ASQ, aes(ASQ$Enrolled, ASQ$`Merit Scholarship Amount`)) + geom_boxplot() + coord_flip()
+```
+
+
+# Plotting some points
+```{r}
+plot(Numerical_Data$`Recalculated GPA` ~ jitter(Numerical_Data$`Merit Scholarship Amount`,5))
+```
+
+# Numeric Data
+```{r}
+ASQ$`Total I Grant` <- as.numeric(ASQ$`Total I Grant`)
+ASQ$Admit <- as.numeric(ASQ$Admit)
+ASQ$Enrolled <- as.numeric(ASQ$Enrolled)
+ASQ$`Recalculated GPA` <- as.numeric(ASQ$`Recalculated GPA`)
+ASQ$`Which best describes your plans for fall 2021?` <- as.factor(ASQ$`Which best describes your plans for fall 2021?`)
+ASQ$`Merit Scholarship Amount` <- gsub("[\\$,]", "",ASQ$`Merit Scholarship Amount`)
+ASQ$Distance <- gsub("[,]" , "", ASQ$Distance)
+ASQ$Distance <- as.numeric(ASQ$Distance)
+#A[] <- lapply(Numerical_Data, function(x) as.numeric(as.character(x)))
+```
+
+
+# Boxplots?
+```{r}
+ggplot(ASQ, aes(ASQ$`Which best describes your plans for fall 2021?`, ASQ$`Total I Grant`)) + geom_boxplot() + coord_flip()
+```
+
+# Boxplotss
+```{r}
+ggplot(ASQ, aes(ASQ$`Considering FinAid rec'd this year - describe families ability to pay`, ASQ$`Total I Grant`         )) + geom_boxplot() + coord_flip()
+
+ggplot(ASQ, aes(ASQ$`Considering FinAid rec'd this year - describe your ability to pay`, ASQ$`Total I Grant`)) + geom_boxplot() + coord_flip()
+```
+
+# Lets look at ZIP again. 
+```{r}
+ASQ %>%
+ # drop_na(`Merit Scholarship Amount`) %>%
+  group_by(`Active Zip`) %>%
+  mutate(Frequancy = n()) %>%
+  filter(Frequancy > 3) %>%
+  summarise(Avg_GPA = mean(`Recalculated GPA`), Avg_Grant = mean(`Total I Grant`),Avg_Academic_Rating = mean(`Academic Rating`),Admit_Enrol = sum(Enrolled)/sum(Admit)*100, Frequancy = n()) %>%
+  arrange(desc(Admit_Enrol))
+# Not enough to make conclusive arguments per zipcode. 
+
+```
+
+
+# Lets look at distance. 
+```{r}
+ASQ %>%
+  mutate(Dist = ifelse(Distance <= 10, 10,
+                          ifelse(Distance > 10 & Distance <= 20, 20,
+                                 ifelse(Distance > 20 & Distance <= 30, 30,
+                                        ifelse(Distance > 30 & Distance <= 40, 40,
+                                               ifelse(Distance > 40 & Distance <= 50, 50,
+                                                      ifelse(Distance > 50 & Distance <= 60, 60,
+                                                             ifelse(Distance > 60 & Distance <= 70, 70,
+                                                                    ifelse(Distance > 70 & Distance <= 80, 80,
+                                                                           ifelse(Distance > 80 & Distance <= 90, 90,
+                                                                                  100)))))))))) %>%
+  group_by(Dist) %>%
+  summarise(Avg_GPA = mean(`Recalculated GPA`), Avg_Grant = mean(`Total I Grant`),Avg_Academic_Rating = mean(`Academic Rating`),Admit_Enrol = sum(Enrolled)/sum(Admit)*100, Frequancy = n()) 
+
+```
+
+# Distance Graph
+```{r}
+G1 <- ASQ%>%
+  select(Admit,Enrolled,Distance) %>%
+  filter(Distance < 200)
+
+ggplot(G1, aes(x = Distance, y = Enrolled/Admit)) + geom_point() + geom_jitter(width = .1,height = .1)
+```
+
+# Decision vs Enrollment
+```{r}
+table(ASQ$`Which best describes your plans for fall 2021?`, ASQ$Enrolled)
+```
+
+# Family Status vs Enrollment
+```{r}
+table(ASQ$`Considering FinAid rec'd this year - describe families ability to pay`, ASQ$Enrolled)
+```
+
+# Self status vs Enrollemnt
+```{r}
+table(ASQ$`Considering FinAid rec'd this year - describe your ability to pay`,ASQ$Enrolled)
+```
+
+
+
+
+
+
+
+
+
+
+
+

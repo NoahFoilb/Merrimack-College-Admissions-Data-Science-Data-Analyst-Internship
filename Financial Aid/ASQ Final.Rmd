@@ -1,0 +1,95 @@
+---
+title: "ASQ Final"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Fixing Data/ Load Libraries 
+```{r}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(writexl)
+library(ggplot2)
+
+ASQ <- read_excel("ASQ - Completors - Fall 2021 20211021-092813.xlsx")
+
+ASQ$`Total I Grant` <- as.numeric(ASQ$`Total I Grant`)
+ASQ$`Merit Scholarship Amount` <- gsub("[\\$,]", "",ASQ$`Merit Scholarship Amount`)
+ASQ$`Merit Scholarship Amount` <- as.numeric(ASQ$`Merit Scholarship Amount`)
+ASQ$Admit <- as.numeric(ASQ$Admit)
+ASQ$Enrolled <- as.numeric(ASQ$Enrolled)
+ASQ$`Recalculated GPA` <- as.numeric(ASQ$`Recalculated GPA`)
+ASQ$`Which best describes your plans for fall 2021?` <- as.factor(ASQ$`Which best describes your plans for fall 2021?`)
+ASQ$`Merit Scholarship Amount` <- gsub("[\\$,]", "",ASQ$`Merit Scholarship Amount`)
+ASQ$Distance <- gsub("[,]" , "", ASQ$Distance)
+ASQ$Distance <- as.numeric(ASQ$Distance)
+```
+
+# Relationship between families ability to pay vs their grant 
+```{r}
+ggplot(ASQ, aes(ASQ$`Considering FinAid rec'd this year - describe families ability to pay`, ASQ$`Total I Grant`         )) + geom_boxplot() + coord_flip()
+```
+
+# Relationship between your ability to pay vs your grant 
+```{r}
+ggplot(ASQ, aes(ASQ$`Considering FinAid rec'd this year - describe your ability to pay`, ASQ$`Total I Grant`         )) + geom_boxplot() + coord_flip()
+```
+
+# Decision vs Enrollment
+```{r}
+table(ASQ$`Which best describes your plans for fall 2021?`, ASQ$Enrolled)
+```
+
+# Family Status vs Enrollment
+```{r}
+table(ASQ$`Considering FinAid rec'd this year - describe families ability to pay`, ASQ$Enrolled)
+```
+
+# Self status vs Enrollemnt
+```{r}
+table(ASQ$`Considering FinAid rec'd this year - describe your ability to pay`,ASQ$Enrolled)
+```
+
+# Zip Code analysis
+```{r}
+ASQ %>%
+  group_by(`Active Zip`) %>%
+  mutate(Frequancy = n()) %>%
+  filter(Frequancy > 3) %>%
+  summarise(Admit_Enrol = sum(Enrolled)/sum(Admit)*100, Frequancy = n()) %>%
+  arrange(desc(Admit_Enrol)) %>%
+  head(10)
+# While there is interesting talking points towards why there are such high admit - enroll % per zipcode I feel there is not enough data to back up such findings. 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
