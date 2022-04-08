@@ -1,0 +1,292 @@
+---
+title: "Predicting Applicant from Inquiries"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries 
+```{r}
+list.of.packages <- c("readxl", "dplyr", "tidyr", "mosaic", "ggplot2", "ggcorrplot", "rpart","rpart.plot", "caret", "e1071", "randomForest", "xgboost", "neuralnet", "janitor", "stringr","openxlsx","rlang","lubridate","anytime")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(stringr)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(mosaic)
+library(ggplot2)
+library(ggcorrplot)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(e1071)
+library(randomForest)
+library(xgboost)
+library(neuralnet)
+library(janitor)
+library(openxlsx)
+library(rlang)
+library(lubridate)
+library(anytime)
+```
+
+
+# Load and clean the data 
+```{r}
+ZIP <- read.csv("Zip code Census.csv")                                          # ZIP CODE
+file.list <- data.frame(list.files(pattern = '*.xlsx') )                        # Create dataframe of all excel files 
+file.list <- data.frame(list.files(pattern = '*.xlsx') )  %>%                   # Double do it bc it fixed an error
+  filter(str_detect(file.list$list.files.pattern......xlsx..,"Pred"))           # Filter so we only have the predicted fields
+Pred_one <- read_excel(file.list[[1,1]])                                        # First file we want to predict
+Pred_two <- read_excel(file.list[[2,1]])                                        # Second
+Pred_three <- read_excel(file.list[[3,1]])                                      # Third
+Fall_2022 <- bind_rows(Pred_one,Pred_two,Pred_three)                            # Merge them
+file.list2 <- data.frame(list.files(pattern = '*.txt') )                         # Same thing as before but for .txt
+file.list2 <- data.frame(list.files(pattern = '*.txt') )  %>%                    # Fixed Error
+  filter(str_detect(file.list2$list.files.pattern......txt..,"Past|past"))       # Filter for Past files
+Uncleaned_data <- read.csv(file.list2[[1,1]], sep = "\t",na.strings = "")        # Read in the file
+cleaned_data <- Uncleaned_data %>%
+  select(Applicant,Sex,Birthdate,Age,IPEDS.Classification,Active.Region,Active.US.5.digit.ZIP.Code,Active.Geomarket,School.Address.US.5.digit.ZIP.Code,Intended.Major,Combined.Inquiry.Date,Ping...Total.Count,Deliver.Statistics.by.Status,Deliver.Statistics...Total,Off.Campus.Visit.Attended,Off.Campus.Visit.Registered,Open.House.Registered,Open.House.Attended,Campus.Tour.Registered,Campus.Tour.Attended,Has.Test.Score,Distance.from.01845)%>%                                              # Only keep specific columns
+filter(Applicant < 3)                                                         # Filter out errors in Applicant
+colnames(Fall_2022)[-c(1,16)] <- colnames(cleaned_data)                         # Fix naming errors
+cleaned_data$Intended.Major[is.na(cleaned_data$Intended.Major)] = "Undecided/Unknown"  
+cleaned_data$School.Address.US.5.digit.ZIP.Code[is.na(cleaned_data$School.Address.US.5.digit.ZIP.Code)] = "No Recorded ZIPCode"
+                                                                                #Na means undecided or unknown so fixed that 
+cleaned_data <- cleaned_data %>%                                                # 
+  drop_na(Distance.from.01845)                                                  # Drop Na's in Distance 
+cleaned_data <- cleaned_data %>%                                                # 
+  filter(Age > 15)                                                              # Filter out unreasonable ages (Outliers)
+cleaned_data$Sex[is.na(cleaned_data$Sex)] <- 3                                  # Na to 3
+cleaned_data <- cleaned_data %>%                                                # Convert Gender into numbers
+  mutate(Sex = ifelse(Sex == "F", 0,                                            # Convert F to 0 
+ifelse(Sex == "M",1,                                                            # M to 1
+       ifelse(Sex != 3, 2,3))))# %>%                                            # Other to 2
+cleaned_data$Deliver.Statistics.by.Status <- as.numeric(cleaned_data$Deliver.Statistics.by.Status)
+                                                                                # Make as numeric for modeling
+cleaned_data <- cleaned_data %>%                                                # Create bins for distance 
+  filter(Distance.from.01845 < 500)                                             # No ouliers
+ names <- c("1","2","3","4")                                                    # Values 
+ b <- c(-Inf,25.1406265  ,54.6694124 ,145.0034910 ,499.3681769 )                # Bins 
+cleaned_data$Distance.from.01845_bin <- cut(cleaned_data$Distance.from.01845,breaks = b, labels = names)
+                                                                                # Creation of bins
+ZIP <- as.data.frame(t(data.frame(matrix(unlist(ZIP), nrow=length(ZIP), byrow=TRUE))))    
+ ZIP<- ZIP %>%                                                                  # Fix formatting
+  row_to_names(row_number = 1)                                                  # Fix formatting conversion errors
+ZIP$`Geographic Area Name` <- gsub("^.{0,6}","",ZIP$`Geographic Area Name`)                   
+ZIP[1] <- NULL                                                                  # get rid of column
+ZIP <- ZIP[c(1,2,24)]                                                           # Keep specific columns
+ZIP$`Estimate!!Households!!Total` <- as.numeric(ZIP$`Estimate!!Households!!Total`)#Make numeric (this line and below)==========
+ZIP$`Estimate!!Households!!Median income (dollars)` <- as.numeric(ZIP$`Estimate!!Households!!Median income (dollars)`) 
+colnames(ZIP ) <- c("Geographic.Area.Name","Household.Total","Household.Median.Income")
+                                                                                # Make names simple for Random Forest
+cleaned_data <- left_join(cleaned_data,ZIP,by = c("Active.US.5.digit.ZIP.Code" = "Geographic.Area.Name") )     
+cleaned_data <- na.omit(cleaned_data)                                           # Combine and Clean Dataset
+
+cleaned_data$Ping...Total.Count <- log10(cleaned_data$Ping...Total.Count + 1)   # Normalize data
+# IPEDS CLASSIFICATION
+X = model.matrix(~0+IPEDS.Classification, data = cleaned_data)
+X <- as.data.frame(X)
+X$not.enough.population <- X$`IPEDS.ClassificationTwo or more races` + X$IPEDS.ClassificationOther + X$`IPEDS.ClassificationAmerican Indian or Alaska Native` + X$`IPEDS.ClassificationNonresident Alien` +X$`IPEDS.ClassificationNative Hawaiian or Other Pacific` + X$`IPEDS.ClassificationMulti-Racial`
+X$`IPEDS.ClassificationHispanic of any race` <- X$IPEDS.ClassificationHispanic +X$`IPEDS.ClassificationHispanic of any race`
+X$IPEDS.ClassificationHispanic <- NULL
+X$`IPEDS.ClassificationTwo or more races` <- NULL
+X$IPEDS.ClassificationOther <- NULL
+X$`IPEDS.ClassificationAmerican Indian or Alaska Native` <- NULL
+X$`IPEDS.ClassificationNonresident Alien` <- NULL
+X$`IPEDS.ClassificationNative Hawaiian or Other Pacific` <- NULL
+X$`IPEDS.ClassificationMulti-Racial` <- NULL
+cleaned_data <- cbind(cleaned_data,X)
+cleaned_data$IPEDS.Classification <- NULL
+cleaned_data$IPEDS.ClassificationRace.Ethnicity.Unknown <- cleaned_data$`IPEDS.ClassificationRace/Ethnicity Unknown`
+cleaned_data$`IPEDS.ClassificationRace/Ethnicity Unknown` <- NULL
+cleaned_data$IPEDS.ClassificationHispanic.of.any.race <- cleaned_data$`IPEDS.ClassificationHispanic of any race`
+cleaned_data$`IPEDS.ClassificationHispanic of any race` <- NULL
+cleaned_data$IPEDS.ClassificationBlack.or.African.American <- cleaned_data$`IPEDS.ClassificationBlack or African American`
+cleaned_data$`IPEDS.ClassificationBlack or African American` <- NULL
+# INQUIRY DATE
+cleaned_data$year = lubridate::year(mdy(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$yday = yday(mdy(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$quarter = quarter(mdy(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$month = lubridate::month(mdy(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$day = lubridate::day(mdy(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$weekdays = weekdays(anydate(cleaned_data$Combined.Inquiry.Date))
+cleaned_data$month = as.factor(cleaned_data$month)
+cleaned_data$weekdays = factor(cleaned_data$weekdays,levels = c("Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday",'Sunday'))
+cleaned_data$year = as.factor(cleaned_data$year)
+cleaned_data$quarter = as.factor(cleaned_data$quarter)
+cleaned_data$week = format(anydate(cleaned_data$Combined.Inquiry.Date), "%V")
+cleaned_data$week = as.integer(cleaned_data$week)
+Year = as.data.frame(model.matrix(~0+year, data = cleaned_data))
+Quarter = as.data.frame(model.matrix(~0+quarter, data = cleaned_data))
+Month = as.data.frame(model.matrix(~0+month, data = cleaned_data))
+cleaned_data <- cbind(cleaned_data,Year,Quarter,Month)
+cleaned_data$year <- NULL
+cleaned_data$quarter <- NULL
+cleaned_data$month <- NULL
+
+X = model.matrix(~0+Distance.from.01845_bin, data = cleaned_data)
+X <- as.data.frame(X)
+cleaned_data <- cbind(cleaned_data,X)
+cleaned_data$Distance.from.01845_bin <- NULL
+cleaned_data$Distance.from.01845 <- NULL
+
+train <- cleaned_data %>% sample_frac(size = .75)                               # Train Test Split 
+test <- cleaned_data %>% setdiff(train)
+
+################ SAME EXACT CODE AS ABOVE BUT ON THE OTHER DATASET #############################
+
+Fall2022_clean <- Fall_2022 %>%
+  select(Ref,Applicant,Sex,Birthdate,Age,IPEDS.Classification,Active.Region,Active.US.5.digit.ZIP.Code,Active.Geomarket,School.Address.US.5.digit.ZIP.Code,Intended.Major,Combined.Inquiry.Date,Deliver.Statistics.by.Status,Deliver.Statistics...Total,Off.Campus.Visit.Attended,Off.Campus.Visit.Registered,Open.House.Registered,Open.House.Attended,Campus.Tour.Registered,Campus.Tour.Attended,Has.Test.Score,Distance.from.01845,Ping...Total.Count) %>%
+  filter(Applicant < 3)
+Fall2022_clean$Intended.Major[is.na(Fall2022_clean$Intended.Major)] = "Undecided/Unknown"
+Fall2022_clean$School.Address.US.5.digit.ZIP.Code[is.na(Fall2022_clean$School.Address.US.5.digit.ZIP.Code)] = "No Recorded ZIPCode"
+Fall2022_clean <- Fall2022_clean %>%
+  drop_na(Distance.from.01845)
+Fall2022_clean <- Fall2022_clean %>%
+  filter(Age > 15) 
+Fall2022_clean$Sex[is.na(Fall2022_clean$Sex)] <- 3
+Fall2022_clean <- Fall2022_clean %>%                                                
+  mutate(Sex = ifelse(Sex == "F", 0,                                           
+ifelse(Sex == "M",1,                                                            
+       ifelse(Sex != 3, 2,3))))
+Fall2022_clean$Ping...Total.Count <- as.numeric(Fall2022_clean$Ping...Total.Count)
+Fall2022_clean$Ping...Total.Count <- log10(Fall2022_clean$Ping...Total.Count + 1)
+Fall2022_clean$Deliver.Statistics.by.Status <- as.numeric(Fall2022_clean$Deliver.Statistics.by.Status)
+Fall2022_clean <- Fall2022_clean%>%  filter(Distance.from.01845 < 500)
+ names <- c("1","2","3","4")
+ b <- c(-Inf,25.1406265  ,54.6694124 ,145.0034910 ,499.3681769 )
+Fall2022_clean$Distance.from.01845_bin <- cut(Fall2022_clean$Distance.from.01845,breaks = b, labels = names)
+Fall2022_clean <- left_join(Fall2022_clean,ZIP,by = c("Active.US.5.digit.ZIP.Code" = "Geographic.Area.Name") )
+Fall2022_clean <- na.omit(Fall2022_clean)
+X = model.matrix(~0+IPEDS.Classification, data = Fall2022_clean)
+X <- as.data.frame(X)
+X$not.enough.population <- X$`IPEDS.ClassificationTwo or more races` + X$IPEDS.ClassificationOther + X$`IPEDS.ClassificationAmerican Indian or Alaska Native` + X$`IPEDS.ClassificationNonresident Alien` +X$`IPEDS.ClassificationNative Hawaiian or Other Pacific` + X$`IPEDS.ClassificationMulti-Racial`
+X$`IPEDS.ClassificationHispanic of any race` <- X$IPEDS.ClassificationHispanic +X$`IPEDS.ClassificationHispanic of any race`
+X$IPEDS.ClassificationHispanic <- NULL
+X$`IPEDS.ClassificationTwo or more races` <- NULL
+X$IPEDS.ClassificationOther <- NULL
+X$`IPEDS.ClassificationAmerican Indian or Alaska Native` <- NULL
+X$`IPEDS.ClassificationNonresident Alien` <- NULL
+X$`IPEDS.ClassificationNative Hawaiian or Other Pacific` <- NULL
+X$`IPEDS.ClassificationMulti-Racial` <- NULL
+Fall2022_clean <- cbind(Fall2022_clean,X)
+Fall2022_clean$IPEDS.Classification <- NULL
+Fall2022_clean$IPEDS.ClassificationRace.Ethnicity.Unknown <- Fall2022_clean$`IPEDS.ClassificationRace/Ethnicity Unknown`
+Fall2022_clean$`IPEDS.ClassificationRace/Ethnicity Unknown` <- NULL
+Fall2022_clean$IPEDS.ClassificationHispanic.of.any.race <- Fall2022_clean$`IPEDS.ClassificationHispanic of any race`
+Fall2022_clean$`IPEDS.ClassificationHispanic of any race` <- NULL
+Fall2022_clean$IPEDS.ClassificationBlack.or.African.American <- Fall2022_clean$`IPEDS.ClassificationBlack or African American`
+Fall2022_clean$`IPEDS.ClassificationBlack or African American` <- NULL
+
+Fall2022_clean$year = lubridate::year(mdy(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$yday = yday(mdy(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$quarter = quarter(mdy(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$month = lubridate::month(mdy(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$day = lubridate::day(mdy(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$weekdays = weekdays(anydate(Fall2022_clean$Combined.Inquiry.Date))
+Fall2022_clean$month = as.factor(Fall2022_clean$month)
+Fall2022_clean$weekdays = factor(Fall2022_clean$weekdays,levels = c("Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday",'Sunday'))
+Fall2022_clean$year = as.factor(Fall2022_clean$year)
+Fall2022_clean$quarter = as.factor(Fall2022_clean$quarter)
+Fall2022_clean$week = format(anydate(Fall2022_clean$Combined.Inquiry.Date), "%V")
+Fall2022_clean$week = as.integer(Fall2022_clean$week)
+Year = as.data.frame(model.matrix(~0+year, data = Fall2022_clean))
+Quarter = as.data.frame(model.matrix(~0+quarter, data = Fall2022_clean))
+Month = as.data.frame(model.matrix(~0+month, data = Fall2022_clean))
+Fall2022_clean <- cbind(Fall2022_clean,Year,Quarter,Month)
+Fall2022_clean$year <- NULL
+Fall2022_clean$quarter <- NULL
+Fall2022_clean$month <- NULL
+
+X = model.matrix(~0+Distance.from.01845_bin, data = Fall2022_clean)
+X <- as.data.frame(X)
+Fall2022_clean <- cbind(Fall2022_clean,X)
+Fall2022_clean$Distance.from.01845_bin <- NULL
+Fall2022_clean$Distance.from.01845 <- NULL
+```
+
+
+
+# Random Forest Model
+```{r}
+Random_Forest <- randomForest(as.factor(Applicant) ~., data = train, ntree = 800, mtry = 6, nodesize = 14, maxnodes = 24)
+                                                                                # Creation of Random Forest Model
+prediction1 <- predict(Random_Forest, test[-c(1)],type = "prob")[,2]            # Probabilities from test 
+prediction1[prediction1 < .65] = 0                                              # Set threshold
+prediction1[prediction1 >= .65] = 1                                             
+confusion <- confusionMatrix(table(test$Applicant, prediction1))                # Confusion Matrix
+confusion
+prediction <-predict(Random_Forest, Fall2022_clean[-c(1,2)],type = "prob")[,2]  # Probabilities from Actual data 
+prediction[prediction < .65] = 0                                                # Threshold
+prediction[prediction >= .65] = 1
+confusion2 <- confusionMatrix(table(Fall2022_clean$Applicant, prediction))     # Confusion Matrix
+confusion2
+```
+
+# Model Analysis for report
+```{r}
+varImpPlot(Random_Forest)
+Import <- as.data.frame(importance(Random_Forest))
+Import %>%
+  mutate(MeanDecreaseGini = format(MeanDecreaseGini, scientific = FALSE)) %>%
+  arrange(desc(MeanDecreaseGini))
+Import$Type <- row.names(Import)
+rownames(Import) <- NULL
+```
+
+
+
+# Exporting Results
+```{r}
+Ref <- data.frame("Ref" = Fall_2022$Ref, "Actually Applied" = Fall_2022$Applicant )
+Probabilities <- data.frame("Ref" = Fall2022_clean$Ref, "Application Prediction" = prediction, "Application Probability" = predict(Random_Forest, Fall2022_clean, type = "prob")[,2])
+Final_Dataset <- left_join(Ref,Probabilities) %>%
+  arrange(desc(Application.Probability))
+Final_Dataset$Application.Prediction[is.na(Final_Dataset$Application.Prediction)] = "Not.enough.data"
+Final_Dataset <- left_join(Final_Dataset,Ref)
+Final_Dataset$Application.Probability[is.na(Final_Dataset$Application.Probability)] = "Not.enough.data"
+write.csv(Final_Dataset, "Fall_2022_Predicted.csv")
+write.csv(Import, "Variable Importance.csv")
+
+sink(file = "Prediction Statistics")
+cat("The measurements to evalute a model changes each time new data is presented, Which is why this document exists. \nIn order relpicate the evaluation of this model, I will showcase the most important statistics to be aware of. \n \n")
+print(as.matrix(confusion, what = "classes"))
+cat("\nTotal Predicted Applicant:")
+print(sum(as.numeric(prediction)))
+cat("\n\nThe key takeaways here should be Balanced Accuarcy, Precision, and Recall \nBalanced Accuracy: This value is the overall accuracy of the predictions. \nPrecision: Out of all that are predicted to apply, what percent of those actually apply.\nRecall: Out of all those who do apply, how many are predicted to apply.\n\nSummary:\nIn terms of Balanced Accuracy, a Balanced Accuracy greater than 75% is significant, yet for this model more can \nbe found from the Precision and Recall. I believe there is more meaning behind a higher Precision. If Precision is \nhigh we can assume when a inquiry is predicted to apply, they will apply. This gives us definite answer of the \nminimum amount of applicant Merrimack will recieve. While we can be certain we have a high precision, how many \ninquiries that will apply did we miss? This is what Recall evaluates. A lower Recall means we have missed a lot of \nApplicants while a higher Recall means we did not miss many potential Applicants. (In this case a lower recall \ndoesn't mean a statistically insignificant model but rather there are more inquiries to applicants we missed). \n\n
+    
+When the model predicts an inquiry on file to be a future applicant, I recommend putting EXTRA effort into them. Especially if they\n haven't applied yet (Recall). Since we have high precision, they SHOULD be applying, yet they have not. I recommend any actions taken towards \n the pursuit be documented and quantitized as I would love to analyze such impacts our actions have towards the application rate! ")
+sink(file = NULL)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
