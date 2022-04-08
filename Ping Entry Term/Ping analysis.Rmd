@@ -1,0 +1,55 @@
+---
+title: "Ping - Ref Analysis"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+#Libraries
+```{r}
+library(dplyr)
+library(readr)
+```
+
+# Load in the Data
+```{r}
+Data <- read.csv("Ping - Ref Data 20220218-144742.csv")
+Data_Filtered <- read.csv("Ping - Ref Data 20220218-151920.csv")
+```
+
+
+# Analysis
+```{r}
+Data %>%
+  group_by(Entry.Term) %>%
+  summarise(Total_Ping = sum(Ping...Total.Count), Avg_Ping = mean(Ping...Total.Count),) %>%
+  arrange(desc(Total_Ping))
+
+Data_Filtered %>%
+  group_by(Entry.Term) %>%
+  summarise(Total_Ping = sum(Ping...Total.Count), Avg_Ping = mean(Ping...Total.Count),) %>%
+  arrange(desc(Total_Ping))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
